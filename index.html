@@ -335,8 +335,59 @@ function addUuids(list){
 let dev = null, gatt = null, report = [], sweepTarget = null, sweepStopFlag = false;
 const chrMap = new Map(); // key svc|chr -> characteristic
 
-if (!navigator.bluetooth) {
-  $('#bleSupport').innerHTML = '⚠️ This browser can\'t use Bluetooth. On Android use <b>Chrome</b>. On iPhone use the <b>Bluefy</b> browser.';
+/* In the Android APK, Bluetooth goes through the native plugin. This shim gives it the same shape as Web Bluetooth. */
+const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+function makeNativeBT(P){
+  let inited = false;
+  const init = async () => { if (!inited) { await P.initialize({ androidNeverForLocation: true }); inited = true; } };
+  const hex2dv = h => { const u = hexToBytes(h || ''); return new DataView(u.buffer); };
+  const u2hex = u => Array.from(u, b => b.toString(16).padStart(2, '0')).join('');
+  function mkChar(deviceId, service, c){
+    const base = { deviceId, service, characteristic: c.uuid }, ls = []; let h = null;
+    const ch = { uuid: c.uuid, properties: c.properties || {}, value: null,
+      async readValue(){ const r = await P.read(base); return hex2dv(r.value); },
+      async writeValueWithResponse(u8){ await P.write({ ...base, value: u2hex(u8) }); },
+      async writeValueWithoutResponse(u8){ await P.writeWithoutResponse({ ...base, value: u2hex(u8) }); },
+      addEventListener(t, cb){ if (t === 'characteristicvaluechanged') ls.push(cb); },
+      async startNotifications(){
+        if (h) await h.remove();
+        h = await P.addListener(`notification|${deviceId}|${service}|${c.uuid}`, ev => { ch.value = hex2dv(ev.value); ls.forEach(cb => cb({ target: ch })); });
+        await P.startNotifications(base);
+      },
+      async stopNotifications(){ await P.stopNotifications(base); if (h) { await h.remove(); h = null; } }
+    };
+    return ch;
+  }
+  return {
+    async requestDevice(opts){
+      await init();
+      const q = {}; const f = opts.filters && opts.filters[0];
+      if (f && f.namePrefix) q.namePrefix = f.namePrefix;
+      let r;
+      try { r = await P.requestDevice(q); } catch (e) { const err = new Error(e.message); if (/cancel/i.test(e.message)) err.name = 'NotFoundError'; throw err; }
+      const deviceId = r.deviceId, listeners = []; let dh = null;
+      const dev = { id: deviceId, name: r.name || '', addEventListener(t, cb){ if (t === 'gattserverdisconnected') listeners.push(cb); } };
+      dev.gatt = { connected: false,
+        async connect(){
+          await init();
+          if (dh) await dh.remove();
+          dh = await P.addListener('disconnected|' + deviceId, () => { dev.gatt.connected = false; listeners.forEach(cb => cb()); });
+          await P.connect({ deviceId }); dev.gatt.connected = true; return dev.gatt;
+        },
+        disconnect(){ P.disconnect({ deviceId }).catch(() => {}); },
+        async getPrimaryServices(){
+          const { services } = await P.getServices({ deviceId });
+          return services.map(s => ({ uuid: s.uuid, async getCharacteristics(){ return s.characteristics.map(c => mkChar(deviceId, s.uuid, c)); } }));
+        }
+      };
+      return dev;
+    }
+  };
+}
+const BT = isNative && window.Capacitor.Plugins.BluetoothLe ? makeNativeBT(window.Capacitor.Plugins.BluetoothLe) : navigator.bluetooth;
+
+if (!BT) {
+  $('#bleSupport').innerHTML = '⚠️ This browser can\'t use Bluetooth. On Android use <b>Chrome</b> or the APK. On iPhone use the <b>Bluefy</b> browser.';
   $('#scanBtn').disabled = true;
 } else $('#bleSupport').textContent = 'Turn the gadget on and keep it close to the phone.';
 
@@ -350,7 +401,7 @@ $('#scanBtn').onclick = async () => {
   const opts = { optionalServices: serviceList() };
   if (prefix) opts.filters = [{ namePrefix: prefix }]; else opts.acceptAllDevices = true;
   try {
-    const d = await navigator.bluetooth.requestDevice(opts);
+    const d = await BT.requestDevice(opts);
     if (dev && dev.gatt.connected) dev.gatt.disconnect();
     dev = d;
     dev.addEventListener('gattserverdisconnected', () => { log('Disconnected from ' + (dev.name || 'device'), 'err'); setConn(false, 'Disconnected'); });
@@ -437,11 +488,11 @@ $('#services').addEventListener('click', async e => {
   else if (a === 'notify') {
     try {
       if (e.target.dataset.on) { await c.stopNotifications(); e.target.textContent = 'Notify'; delete e.target.dataset.on; log('Notify off ' + shortUuid(c.uuid)); return; }
-      c.addEventListener('characteristicvaluechanged', ev => {
+      if (!ce.dataset.l) { ce.dataset.l = 1; c.addEventListener('characteristicvaluechanged', ev => {
         const u = dvToU8(ev.target.value);
         log(`◀ ${shortUuid(c.uuid)}  ${toHex(u)}  |${toAscii(u)}|`, 'rx');
         showVal(ce, u);
-      });
+      }); }
       await c.startNotifications(); e.target.textContent = 'Stop'; e.target.dataset.on = 1;
       log('Notify on ' + shortUuid(c.uuid) + ' — now use the gadget and watch here');
     } catch (err) { log('Notify: ' + err.message, 'err'); }
@@ -713,7 +764,7 @@ $('#fileIn').onchange = e => { const f = e.target.files[0]; if (f) inspectFile(f
 /* ---------- USB serial ---------- */
 let port = null, reader = null, serKeep = false;
 if (!('serial' in navigator)) {
-  $('#serSupport').innerHTML = '⚠️ USB serial isn\'t available in this browser. It needs Chrome (desktop, or recent Android Chrome). Bluetooth and the other tabs still work.';
+  $('#serSupport').innerHTML = isNative ? '⚠️ USB serial only works in the Chrome web version (open https://m9r1u5.github.io/My/ in Chrome). Bluetooth and the other tabs work here.' : '⚠️ USB serial isn\'t available in this browser. It needs Chrome (desktop, or recent Android Chrome). Bluetooth and the other tabs still work.';
   $('#serConn').disabled = true;
 }
 const serRx = $('#serRx');
@@ -809,7 +860,9 @@ $('#colIn').oninput = colour; colour();
 let deferred = null;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('#installBtn').hidden = false; });
 $('#installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('#installBtn').hidden = true; };
+const APK_URL = 'https://github.com/m9r1u5/My/releases/latest/download/GadgetProbe.apk';
 $('#updateBtn').onclick = async () => {
+  if (isNative) { if (confirm('Download the latest Gadget Probe APK? Install it over this one when it finishes.')) window.open(APK_URL, '_blank'); return; }
   toast('Updating…');
   try {
     const reg = await navigator.serviceWorker.getRegistration();
@@ -818,7 +871,7 @@ $('#updateBtn').onclick = async () => {
   } catch {}
   location.reload();
 };
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!isNative && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 showUuids();
 log('Gadget Probe ready');
