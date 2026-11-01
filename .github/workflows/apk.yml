@@ -38,6 +38,14 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: Add network plugin and permissions
+        run: |
+          D=build/android/app/src/main/java/za/m9r1u5/gadgetprobe
+          cp android-src/*.java "$D/"
+          M=build/android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />\n    <application android:usesCleartextTraffic="true"#' "$M"
+          cat "$M"
+
       - name: App icon
         run: |
           rm -rf build/android/app/src/main/res/mipmap-anydpi-v26

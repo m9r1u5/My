@@ -69,6 +69,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   </div>
   <nav id="tabs">
     <button data-t="ble" class="on">Bluetooth</button>
+    <button data-t="net">Network</button>
     <button data-t="apk">App / File</button>
     <button data-t="serial">USB Serial</button>
     <button data-t="tools">Tools</button>
@@ -125,6 +126,59 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
     <p class="mut">Phones only show services you ask for in advance. Common ones are already included. Add any UUIDs you find in the App / File tab here, then scan again.</p>
     <textarea id="customUuids" rows="3" placeholder="one per line, e.g. 0000ffe0-0000-1000-8000-00805f9b34fb or ffe0"></textarea>
     <div class="row" style="margin-top:6px"><button id="saveUuids" class="s fit">Save UUIDs</button><span class="mut" id="uuidCount"></span></div>
+  </div>
+</section>
+
+
+<!-- NETWORK -->
+<section id="net">
+  <div class="card">
+    <h2>Devices on your Wi-Fi</h2>
+    <p class="mut" id="netInfo">Checking Wi-Fi…</p>
+    <div class="row">
+      <button id="netScan" class="b fit">Scan network</button>
+      <button id="netStop" class="d fit" disabled>Stop</button>
+      <span id="netProg" class="mono mut"></span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="snapSave" class="s fit" disabled>Save as snapshot</button>
+      <select id="snapPick" class="fit" style="width:auto"></select>
+      <button id="snapCmp" class="s fit" disabled>Compare</button>
+      <button id="snapDel" class="s fit">Delete</button>
+    </div>
+    <div id="netDiff"></div>
+    <div id="netList" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Find a light by switching it off</h2>
+    <ol class="mut" style="padding-left:18px;margin:0">
+      <li>Light <b>on</b>, wait a minute → <b>Scan network</b> → <b>Save as snapshot</b> (“Light on”).</li>
+      <li>Switch the lamp <b>off at the wall/lamp switch</b> (not in an app), wait 1–2 minutes → <b>Scan network</b>.</li>
+      <li>Pick “Light on” → <b>Compare</b>. Whatever is <b>gone</b> is the light.</li>
+    </ol>
+    <p class="mut">Run each scan twice if you can. Some devices sleep and miss a scan.</p>
+  </div>
+
+  <div class="card">
+    <h2>Listen for smart devices</h2>
+    <p class="mut">Smart bulbs and plugs (especially Tuya / Smart Life) announce themselves every few seconds. This listens for 15 s and decodes what it can. It also asks TVs, speakers and routers to identify themselves.</p>
+    <button id="netListen" class="b">Listen 15 s</button>
+    <div id="listenOut" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Nearby Wi-Fi hotspots</h2>
+    <p class="mut">A smart bulb in <b>pairing mode</b> makes its own hotspot (e.g. “SmartLife-1A2B”, “ESP_…”). To force pairing mode: switch the lamp off/on 3–5 times about 1 s apart until the bulb blinks fast, then tap below.</p>
+    <button id="wifiBtn" class="b">Show hotspots</button>
+    <div id="wifiOut" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Open a device</h2>
+    <p class="mut">Some gadgets have a built-in web page. Enter an IP (or tap “Web” on a device above).</p>
+    <div class="row"><input id="httpUrl" class="mono" placeholder="192.168.1.50"><button id="httpGo" class="s fit">Open</button></div>
+    <div id="httpOut" class="val mono" hidden></div>
   </div>
 </section>
 
@@ -570,6 +624,145 @@ $('#sweepGo').onclick = async () => {
 };
 $('#sweepStop').onclick = () => { sweepStopFlag = true; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+
+/* ---------- Network (APK only) ---------- */
+const NS = isNative && window.Capacitor.Plugins.NetScan;
+const PORT_HINT = {80:'web page',443:'secure web',6668:'TUYA smart device',6053:'ESPHome device',1883:'MQTT (IoT messaging)',554:'camera video (RTSP)',
+  8080:'web page (alt)',8008:'Google/Chromecast',8009:'Google/Chromecast',8888:'web/admin',9999:'TP-Link Kasa smart device',49153:'Wemo/UPnP device',
+  5000:'UPnP / NAS',7000:'AirPlay / Apple',62078:'iPhone or iPad',23:'telnet',22:'SSH',53:'DNS (router)'};
+let netDevices = null, netInfoData = null;
+function devLabel(d){
+  const tags = [];
+  if (d.self) tags.push('THIS PHONE');
+  if (netInfoData && d.ip === netInfoData.gateway) tags.push('ROUTER');
+  if ((d.ports || []).includes(6668)) tags.push('SMART DEVICE (Tuya)');
+  if ((d.ports || []).includes(6053)) tags.push('ESPHome');
+  if ((d.ports || []).includes(9999)) tags.push('TP-Link Kasa');
+  return tags;
+}
+function devHtml(d, extra = ''){
+  const tags = devLabel(d);
+  return `<div class="chr"><div class="row"><b class="mono">${esc(d.ip)}</b>${tags.map(t => `<span class="badge fit">${esc(t)}</span>`).join('')}
+    <button class="s fit" data-web="${esc(d.ip)}">Web</button></div>
+    ${d.name ? `<div class="mono mut">${esc(d.name)}</div>` : ''}${d.mac ? `<div class="mono mut">MAC ${esc(d.mac)}</div>` : ''}
+    <div class="mut">${(d.ports || []).length ? (d.ports).map(p => `${p} ${esc(PORT_HINT[p] || '')}`).join(' · ') : 'no common ports open'}</div>${extra}</div>`;
+}
+function snaps(){ return store.get('gp_snaps', []); }
+function renderSnaps(){
+  const l = snaps();
+  $('#snapPick').innerHTML = l.length ? l.map((x, i) => `<option value="${i}">${esc(x.name)} (${x.devices.length})</option>`).join('') : '<option value="">No snapshots</option>';
+  $('#snapCmp').disabled = !l.length || !netDevices;
+}
+async function netInit(){
+  if (!NS) {
+    $('#netInfo').innerHTML = '⚠️ Network scanning only works in the <b>Android app (APK)</b>. Browsers aren\'t allowed to scan your Wi-Fi.';
+    ['#netScan','#netListen','#wifiBtn','#httpGo'].forEach(id => $(id).disabled = true);
+    return;
+  }
+  try {
+    netInfoData = await NS.info();
+    if (!netInfoData.wifi) $('#netInfo').innerHTML = '⚠️ Phone is not on Wi-Fi. Connect to the same Wi-Fi as the gadget.';
+    else $('#netInfo').innerHTML = `Phone ${esc(netInfoData.ip)}/${netInfoData.prefix} · router ${esc(netInfoData.gateway || '?')}` +
+      (netInfoData.vpn ? '<br>⚠️ A VPN is on. If the scan finds little, switch the VPN off and scan again.' : '');
+  } catch (e) { $('#netInfo').textContent = 'Network info: ' + e.message; }
+  NS.addListener('progress', p => { $('#netProg').textContent = `${p.done}/${p.total} checked · ${p.found} found`; });
+  NS.addListener('packet', o => listenShow(o));
+  renderSnaps();
+}
+$('#netScan').onclick = async () => {
+  $('#netScan').disabled = true; $('#netStop').disabled = false; $('#netDiff').innerHTML = ''; $('#netList').innerHTML = '';
+  $('#netProg').textContent = 'Starting…'; log('Network scan started');
+  try {
+    const r = await NS.scan({ timeout: 450 });
+    netInfoData = Object.assign(netInfoData || {}, r);
+    netDevices = r.devices.sort((a, b) => a.ip.split('.').map(Number).reduce((x, y) => x * 256 + y) - b.ip.split('.').map(Number).reduce((x, y) => x * 256 + y));
+    $('#netProg').textContent = `${netDevices.length} devices${r.cancelled ? ' (stopped early)' : ''}`;
+    $('#netList').innerHTML = netDevices.map(d => devHtml(d)).join('');
+    log(`Network scan: ${netDevices.length} devices`);
+    netDevices.forEach(d => log(`  ${d.ip} ${d.name || ''} ports ${(d.ports || []).join(',') || '-'} ${devLabel(d).join(' ')}`));
+    $('#snapSave').disabled = false; renderSnaps();
+  } catch (e) { $('#netProg').textContent = ''; log('Scan: ' + e.message, 'err'); alert(e.message); }
+  $('#netScan').disabled = false; $('#netStop').disabled = true;
+};
+$('#netStop').onclick = () => NS && NS.stop();
+$('#snapSave').onclick = () => {
+  if (!netDevices) return;
+  const name = prompt('Snapshot name', 'Light on ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+  if (!name) return;
+  const l = snaps(); l.unshift({ name, at: Date.now(), devices: netDevices }); store.set('gp_snaps', l.slice(0, 10));
+  renderSnaps(); toast('Saved');
+};
+$('#snapDel').onclick = () => {
+  const i = $('#snapPick').value; if (i === '') return;
+  if (!confirm('Delete this snapshot?')) return;
+  const l = snaps(); l.splice(+i, 1); store.set('gp_snaps', l); renderSnaps();
+};
+$('#snapCmp').onclick = () => {
+  const s = snaps()[+$('#snapPick').value]; if (!s || !netDevices) return;
+  const now = new Map(netDevices.map(d => [d.ip, d])), then = new Map(s.devices.map(d => [d.ip, d]));
+  const gone = s.devices.filter(d => !now.has(d.ip)), added = netDevices.filter(d => !then.has(d.ip));
+  const changed = netDevices.filter(d => then.has(d.ip) && (then.get(d.ip).ports || []).join() !== (d.ports || []).join());
+  let h = `<h3>Compared with “${esc(s.name)}”</h3>`;
+  h += `<p><b style="color:var(--warn)">Gone now (${gone.length})</b> — switched off since the snapshot:</p>` + (gone.map(d => devHtml(d)).join('') || '<p class="mut">none</p>');
+  h += `<p><b style="color:var(--ok)">New now (${added.length})</b>:</p>` + (added.map(d => devHtml(d)).join('') || '<p class="mut">none</p>');
+  if (changed.length) h += `<p><b>Ports changed (${changed.length})</b>:</p>` + changed.map(d => devHtml(d)).join('');
+  $('#netDiff').innerHTML = h;
+  log(`Compare with "${s.name}": gone ${gone.map(d => d.ip).join(', ') || 'none'}; new ${added.map(d => d.ip).join(', ') || 'none'}`);
+};
+document.querySelector('#net').addEventListener('click', e => {
+  const ip = e.target.dataset.web; if (!ip) return;
+  $('#httpUrl').value = ip; $('#httpGo').click(); $('#httpUrl').scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+const listenSeen = [];
+function listenShow(o){
+  const box = $('#listenOut');
+  let txt = o.text || '', title = o.kind === 'ssdp' ? 'Announced itself (SSDP)' : `Broadcast on port ${o.port}`;
+  let extra = '';
+  if (o.kind !== 'ssdp' && txt.startsWith('{')) {
+    try { const j = JSON.parse(txt); if (j.gwId || j.devId) { title = '💡 TUYA SMART DEVICE'; extra = `<div class="mono">ID ${esc(j.gwId || j.devId)}<br>Product ${esc(j.productKey || '?')} · protocol ${esc(j.version || '?')}${j.ip ? '<br>IP ' + esc(j.ip) : ''}</div>`; } } catch {}
+  }
+  if (o.kind === 'ssdp') { const srv = (txt.match(/^server:\s*(.*)$/im) || [])[1], loc = (txt.match(/^location:\s*(.*)$/im) || [])[1]; extra = `<div class="mono mut">${esc(srv || '')}${loc ? '<br>' + esc(loc) : ''}</div>`; }
+  else if (!extra) extra = `<div class="mono mut">${esc(txt || o.hex || '')}</div>`;
+  box.insertAdjacentHTML('beforeend', `<div class="chr"><div class="row"><b class="mono">${esc(o.ip)}</b><span class="badge fit">${esc(title)}</span></div>${extra}</div>`);
+  log(`Heard ${o.ip} ${title}: ${(txt || o.hex || '').replace(/\s+/g, ' ').slice(0, 160)}`, 'rx');
+}
+$('#netListen').onclick = async () => {
+  const b = $('#netListen'); b.disabled = true; $('#listenOut').innerHTML = '<p class="mut">Listening…</p>';
+  try {
+    const r = await NS.listen({ seconds: 15 });
+    const p = $('#listenOut').querySelector('p.mut'); if (p) p.remove();
+    if (!r.packets.length) $('#listenOut').innerHTML = '<p class="mut">Nothing heard. Make sure the light is powered on and the phone is on the same Wi-Fi (VPN off).</p>';
+  } catch (e) { $('#listenOut').innerHTML = `<p class="mut">${esc(e.message)}</p>`; }
+  b.disabled = false;
+};
+const IOT_SSID = /(smart ?life|^sl-|tuya|esp[_-]|^bk|lsc|wiz|magic|tasmota|^smart|light|bulb|lamp|led|globe|_ap$|-ap$|setup|config)/i;
+$('#wifiBtn').onclick = async () => {
+  try {
+    const r = await NS.wifiList();
+    const nets = r.networks.filter(n => n.ssid).sort((a, b) => (IOT_SSID.test(b.ssid) - IOT_SSID.test(a.ssid)) || b.level - a.level);
+    $('#wifiOut').innerHTML = nets.length ? nets.map(n => `<div class="chr"><div class="row"><b>${esc(n.ssid)}</b>${IOT_SSID.test(n.ssid) ? '<span class="badge fit">LIKELY GADGET</span>' : ''}${n.open ? '<span class="badge fit">open</span>' : ''}</div><div class="mono mut">${esc(n.bssid)} · ${n.level} dBm · ${n.freq > 4000 ? '5' : '2.4'} GHz</div></div>`).join('')
+      : '<p class="mut">No networks listed. Turn on Location (GPS) in quick settings and try again — Android hides Wi-Fi lists without it.</p>';
+    log(`Hotspots: ${nets.map(n => n.ssid).join(', ')}`);
+  } catch (e) {
+    if (/PERMISSION/.test(e.message)) alert('Allow Location when Android asks, then tap “Show hotspots” again. Android needs it to list Wi-Fi networks.');
+    else $('#wifiOut').innerHTML = `<p class="mut">${esc(e.message)}</p>`;
+  }
+};
+$('#httpGo').onclick = async () => {
+  let u = $('#httpUrl').value.trim(); if (!u) return;
+  if (!/^https?:\/\//.test(u)) u = 'http://' + u;
+  const out = $('#httpOut'); out.hidden = false; out.textContent = 'Opening ' + u + '…';
+  try {
+    const r = await NS.http({ url: u });
+    const title = (r.body.match(/<title[^>]*>([^<]*)/i) || [])[1];
+    const text = r.body.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+    out.innerHTML = `HTTP ${r.status}${r.server ? ' · ' + esc(r.server) : ''}${title ? '<br><b>' + esc(title) + '</b>' : ''}<br>${esc(text)}<br><br><a href="${esc(u)}" target="_blank" style="color:var(--acc)">Open in browser</a>`;
+    log(`HTTP ${u} → ${r.status} ${r.server || ''} ${title || ''}`);
+  } catch (e) { out.textContent = 'No web page: ' + e.message; log('HTTP ' + u + ': ' + e.message, 'err'); }
+};
+netInit();
 
 /* ---------- ZIP / APK / DEX parsing ---------- */
 function zipEntries(buf){
