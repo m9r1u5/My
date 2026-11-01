@@ -29,10 +29,8 @@ jobs:
 
       - name: Create Capacitor project
         run: |
-          mkdir -p build/www build/assets
+          mkdir -p build/www
           cp index.html manifest.json icon-192.png icon-512.png build/www/
-          cp icon-1024.png build/assets/icon-only.png
-          cp icon-1024.png build/assets/icon-foreground.png
           cd build
           echo '{"name":"gadget-probe","private":true,"version":"1.0.0"}' > package.json
           echo '{"appId":"za.m9r1u5.gadgetprobe","appName":"Gadget Probe","webDir":"www","android":{"allowMixedContent":true}}' > capacitor.config.json
@@ -41,9 +39,9 @@ jobs:
           npx cap sync android
 
       - name: App icon
-        continue-on-error: true
-        working-directory: build
-        run: npx --yes @capacitor/assets generate --android --iconBackgroundColor '#0f1720' --splashBackgroundColor '#0f1720'
+        run: |
+          rm -rf build/android/app/src/main/res/mipmap-anydpi-v26
+          cp -r android-icons/* build/android/app/src/main/res/
 
       - name: Version and signing
         working-directory: build/android
