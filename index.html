@@ -1,0 +1,827 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
+<title>Gadget Probe</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#0f1720;--card:#18232f;--card2:#1f2d3b;--line:#2b3b4c;--fg:#e6edf3;--mut:#8b9bab;--acc:#2dd4bf;--acc2:#0ea5e9;--warn:#f59e0b;--bad:#ef4444;--ok:#22c55e}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px 0}
+.top{display:flex;align-items:center;gap:8px}
+.top h1{font-size:18px;margin:0;flex:1}
+.top h1 span{color:var(--acc)}
+nav{display:flex;gap:4px;overflow-x:auto;margin-top:8px;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:0;color:var(--mut);padding:8px 10px;font:inherit;font-weight:600;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--acc);border-color:var(--acc)}
+main{padding:12px 16px 80px;max-width:760px;margin:0 auto}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 8px}
+.card h3{font-size:14px;margin:10px 0 6px;color:var(--mut)}
+button.b{background:var(--acc);color:#04231f;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:700}
+button.s{background:var(--card2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:inherit;font-size:13px}
+button.d{background:#3a1a1a;color:#fca5a5;border:1px solid #5b2525;border-radius:8px;padding:7px 11px;font:inherit;font-size:13px}
+button:disabled{opacity:.45}
+input,select,textarea{background:#0b121a;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;width:100%}
+textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1 1 auto}
+.row>.fit{flex:0 0 auto}
+label.ck{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--mut)}
+label.ck input{width:auto}
+.mut{color:var(--mut);font-size:13px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;word-break:break-all}
+.svc{border:1px solid var(--line);border-radius:10px;margin:8px 0;overflow:hidden}
+.svc>.hd{background:var(--card2);padding:8px 10px}
+.chr{padding:10px;border-top:1px solid var(--line)}
+.badge{display:inline-block;font-size:11px;padding:1px 6px;border-radius:99px;background:#0b3b36;color:var(--acc);margin:2px 3px 2px 0}
+.val{background:#0b121a;border-radius:6px;padding:6px 8px;margin-top:6px}
+.tgt{outline:2px solid var(--warn)}
+#log{max-height:65vh;overflow:auto}
+.le{border-bottom:1px solid var(--line);padding:4px 0}
+.le .t{color:var(--mut);margin-right:6px}
+.le.tx{color:#7dd3fc}.le.rx{color:#86efac}.le.err{color:#fca5a5}.le.info{color:var(--fg)}
+.pill{font-size:12px;padding:3px 8px;border-radius:99px;background:var(--card2);color:var(--mut)}
+.pill.ok{background:#0f3a24;color:#86efac}
+.list{max-height:320px;overflow:auto;background:#0b121a;border-radius:8px;padding:6px 8px}
+.list div{padding:3px 0;border-bottom:1px solid #16222e}
+.macro{display:inline-flex;gap:2px;margin:3px}
+.macro button.s{padding:6px 10px}
+details summary{cursor:pointer;color:var(--acc);font-weight:600}
+.warn{border-left:3px solid var(--warn);padding-left:10px}
+hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>Gadget <span>Probe</span></h1>
+    <span id="conn" class="pill">Not connected</span>
+    <button id="installBtn" class="s" hidden>Install</button>
+    <button id="updateBtn" class="s">Update</button>
+  </div>
+  <nav id="tabs">
+    <button data-t="ble" class="on">Bluetooth</button>
+    <button data-t="apk">App / File</button>
+    <button data-t="serial">USB Serial</button>
+    <button data-t="tools">Tools</button>
+    <button data-t="log">Log</button>
+    <button data-t="help">Help</button>
+  </nav>
+</header>
+<main>
+
+<!-- BLUETOOTH -->
+<section id="ble" class="on">
+  <div class="card">
+    <h2>Find a Bluetooth gadget</h2>
+    <div class="row">
+      <input id="namePrefix" placeholder="Name starts with… (optional)">
+      <button id="scanBtn" class="b fit">Scan</button>
+    </div>
+    <p class="mut" id="bleSupport"></p>
+    <div class="row" style="margin-top:6px">
+      <button id="reconnBtn" class="s fit" disabled>Reconnect</button>
+      <button id="discBtn" class="s fit" disabled>Disconnect</button>
+      <button id="reportBtn" class="s fit" disabled>Copy report</button>
+    </div>
+  </div>
+
+  <div class="card" id="devCard" hidden>
+    <h2 id="devName">Device</h2>
+    <div class="mut mono" id="devId"></div>
+    <h3>Saved buttons for this device</h3>
+    <div id="macros" class="mut">None yet. Write something below, then tap “Save as button”.</div>
+    <h3>Services &amp; characteristics</h3>
+    <div id="services"></div>
+  </div>
+
+  <div class="card">
+    <h2>Command sweep</h2>
+    <p class="mut">Tap <b>Target</b> on a writable characteristic, then send a template many times with one byte stepping through values. Put <span class="mono">XX</span> where the changing byte goes. Useful for finding unknown commands on lamps, LEDs and toys. Watch the gadget and the log.</p>
+    <div class="mut">Target: <span id="sweepTarget" class="mono">none</span></div>
+    <input id="sweepTpl" class="mono" value="7E 00 05 03 XX 00 00 00 EF" style="margin-top:6px">
+    <div class="row" style="margin-top:6px">
+      <input id="sweepFrom" value="00" class="mono" style="width:28%" placeholder="From (hex)">
+      <input id="sweepTo" value="FF" class="mono" style="width:28%" placeholder="To (hex)">
+      <input id="sweepDelay" value="400" type="number" style="width:28%" placeholder="Delay ms">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="sweepGo" class="b fit">Start</button>
+      <button id="sweepStop" class="d fit" disabled>Stop</button>
+      <span id="sweepNow" class="mono mut"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Extra service UUIDs</h2>
+    <p class="mut">Phones only show services you ask for in advance. Common ones are already included. Add any UUIDs you find in the App / File tab here, then scan again.</p>
+    <textarea id="customUuids" rows="3" placeholder="one per line, e.g. 0000ffe0-0000-1000-8000-00805f9b34fb or ffe0"></textarea>
+    <div class="row" style="margin-top:6px"><button id="saveUuids" class="s fit">Save UUIDs</button><span class="mut" id="uuidCount"></span></div>
+  </div>
+</section>
+
+<!-- APK / FILE -->
+<section id="apk">
+  <div class="card">
+    <h2>Inspect an app or firmware file</h2>
+    <p class="mut">Pick the old gadget app (<b>.apk</b>, <b>.xapk</b>, <b>.apks</b>) or a firmware <b>.bin</b>. Everything is processed on your phone; nothing is uploaded. It pulls out Bluetooth UUIDs, web addresses, possible hex commands and clues about which chip/platform the gadget uses.</p>
+    <input type="file" id="fileIn">
+    <p id="fileStatus" class="mut"></p>
+  </div>
+  <div id="fileOut"></div>
+</section>
+
+<!-- SERIAL -->
+<section id="serial">
+  <div class="card">
+    <h2>USB serial monitor</h2>
+    <p class="mut">For boards with a USB-serial chip (Arduino, ESP32, CH340, CP2102, FTDI) plugged in with an OTG cable.</p>
+    <p class="mut" id="serSupport"></p>
+    <div class="row">
+      <select id="baud">
+        <option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option><option>230400</option><option>460800</option><option>921600</option>
+      </select>
+      <button id="serConn" class="b fit">Connect</button>
+      <button id="serDisc" class="s fit" disabled>Disconnect</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label class="ck"><input type="checkbox" id="serHex"> Show as hex</label>
+      <select id="serEol" class="fit" style="width:auto"><option value="">No line ending</option><option value="\n" selected>LF \n</option><option value="\r\n">CR+LF</option><option value="\r">CR</option></select>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="serOut" class="mono" placeholder="Text to send (or hex if mode = hex)">
+      <select id="serMode" class="fit" style="width:auto"><option value="text">text</option><option value="hex">hex</option></select>
+      <button id="serSend" class="s fit" disabled>Send</button>
+    </div>
+    <h3>Received</h3>
+    <div id="serRx" class="list mono" style="min-height:120px"></div>
+    <div class="row" style="margin-top:6px"><button id="serClear" class="s fit">Clear</button></div>
+  </div>
+</section>
+
+<!-- TOOLS -->
+<section id="tools">
+  <div class="card">
+    <h2>Byte converter</h2>
+    <div class="row"><select id="cvFrom" class="fit" style="width:auto"><option value="hex">Hex</option><option value="text">Text</option><option value="dec">Decimal bytes</option><option value="b64">Base64</option></select></div>
+    <textarea id="cvIn" rows="2" style="margin-top:6px" placeholder="Type here"></textarea>
+    <div class="val mono" id="cvOut"></div>
+  </div>
+  <div class="card">
+    <h2>Checksums</h2>
+    <p class="mut">Many cheap gadgets end each command with a checksum byte. Paste a command (hex) to compare.</p>
+    <textarea id="ckIn" rows="2" class="mono" placeholder="AA 55 01 02 03"></textarea>
+    <div class="val mono" id="ckOut"></div>
+  </div>
+  <div class="card">
+    <h2>Colour → bytes</h2>
+    <p class="mut">For RGB lamps: the R, G, B bytes to put in a command.</p>
+    <div class="row"><input type="color" id="colIn" value="#ff6600" class="fit" style="width:64px;height:44px;padding:2px"><div class="mono" id="colOut"></div></div>
+  </div>
+</section>
+
+<!-- LOG -->
+<section id="log-s">
+  <div class="card">
+    <div class="row"><h2 style="margin:0">Log</h2><button id="logCopy" class="s fit">Copy</button><button id="logShare" class="s fit">Share</button><button id="logClear" class="d fit">Clear</button></div>
+    <div id="log" class="mono" style="margin-top:8px"></div>
+  </div>
+</section>
+
+<!-- HELP -->
+<section id="help">
+  <div class="card">
+    <h2>Bringing a dead gadget back</h2>
+    <ol>
+      <li><b>Scan</b> on the Bluetooth tab with the gadget powered on. If it doesn't show, it may only talk over Wi-Fi, or it may need a button press to pair.</li>
+      <li><b>Connect</b> and look at the services. Tap <b>Read</b> on everything readable — names, firmware versions and model numbers help you search online.</li>
+      <li>Tap <b>Notify</b> on notify-able characteristics, then press the gadget's own buttons. Anything that appears in the log tells you how it reports things.</li>
+      <li>Get the <b>old app's APK</b> (APKMirror/APKPure, or pull it off an old phone with “APK Extractor”). Open it in <b>App / File</b>. Copy the UUIDs into “Extra service UUIDs”, scan again, and try the hex commands it found.</li>
+      <li>Still stuck? Use the <b>Command sweep</b> on a writable characteristic and watch for the gadget reacting. Save anything that works as a button.</li>
+      <li>Use <b>Copy report</b> and the <b>Log</b> to paste findings into Claude for help decoding them.</li>
+    </ol>
+  </div>
+  <div class="card warn">
+    <h2>Phone support</h2>
+    <p class="mut"><b>Android:</b> open in Chrome and tap Install. Bluetooth needs Location and Nearby devices permissions turned on for Chrome.<br>
+    <b>iPhone:</b> Safari can't use Bluetooth or USB from web apps. Open this page in the free <b>Bluefy</b> browser for Bluetooth. The App / File and Tools tabs work everywhere.<br>
+    Sweeping and writing random commands is usually harmless on lamps and toys, but don't sweep anything that controls mains power, heating, locks or batteries' charge settings.</p>
+  </div>
+</section>
+</main>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+
+/* ---------- tabs ---------- */
+$('#tabs').addEventListener('click', e => {
+  const t = e.target.dataset.t; if(!t) return;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b === e.target));
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('on', s.id === t || s.id === t + '-s'));
+});
+
+/* ---------- byte helpers ---------- */
+const toHex = u8 => Array.from(u8, b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+const toAscii = u8 => Array.from(u8, b => b >= 32 && b < 127 ? String.fromCharCode(b) : '.').join('');
+function hexToBytes(s){
+  s = s.replace(/0x/gi, '').replace(/[^0-9a-f]/gi, '');
+  if (s.length % 2) s = '0' + s;
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+  return out;
+}
+function textToBytes(s){
+  s = s.replace(/\\r/g, '\r').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+  return new TextEncoder().encode(s);
+}
+const parseIn = (s, mode) => mode === 'hex' ? hexToBytes(s) : textToBytes(s);
+const dvToU8 = dv => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+
+/* ---------- log ---------- */
+const logEl = $('#log'); const logLines = [];
+function log(msg, cls = 'info'){
+  const t = new Date().toLocaleTimeString([], {hour12:false});
+  logLines.push(`[${t}] ${msg}`);
+  const d = document.createElement('div'); d.className = 'le ' + cls;
+  d.innerHTML = `<span class="t">${t}</span>${esc(msg)}`;
+  logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+  if (logLines.length > 3000) { logLines.shift(); logEl.firstChild.remove(); }
+}
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copied'); }catch{ prompt('Copy this:', t); } }
+function toast(m){ const p = $('#conn'); const old = p.textContent; p.textContent = m; setTimeout(() => { if (p.textContent === m) p.textContent = old; }, 1200); }
+$('#logCopy').onclick = () => copyText(logLines.join('\n'));
+$('#logClear').onclick = () => { logLines.length = 0; logEl.innerHTML = ''; };
+$('#logShare').onclick = async () => {
+  const text = logLines.join('\n');
+  if (navigator.share) { try{ await navigator.share({title:'Gadget Probe log', text}); }catch{} } else copyText(text);
+};
+
+/* ---------- known UUID names ---------- */
+const NAMES = {
+  '1800':'Generic Access','1801':'Generic Attribute','180a':'Device Information','180f':'Battery','1812':'HID (keyboard/remote)',
+  '180d':'Heart Rate','1805':'Current Time','1802':'Immediate Alert','1803':'Link Loss','1804':'Tx Power','1910':'Tuya BLE',
+  'ffe0':'Serial-style data (HM-10/JDY/CC254x modules)','fff0':'Vendor service (very common on LED/lamp controllers)',
+  'ffd0':'LED controller (Triones/HappyLighting family)','ffd5':'LED controller write service','ffd9':'LED write','ffda':'LED notify',
+  'fee7':'Tencent/WeChat','fe95':'Xiaomi','fe59':'Nordic DFU (firmware update)','ae00':'Vendor service (BT speakers/LED clocks)',
+  'ae01':'Vendor write','ae02':'Vendor notify','ff00':'Vendor service','fef5':'Dialog Semi','fd50':'Vendor (Hangzhou Tuya)',
+  '2a00':'Device Name','2a01':'Appearance','2a04':'Connection params','2a05':'Service Changed','2a19':'Battery Level',
+  '2a23':'System ID','2a24':'Model Number','2a25':'Serial Number','2a26':'Firmware Revision','2a27':'Hardware Revision',
+  '2a28':'Software Revision','2a29':'Manufacturer','2a50':'PnP ID','ffe1':'Serial data (write + notify)','ffe2':'Serial data 2',
+  'fff1':'Vendor char 1','fff2':'Vendor char 2','fff3':'Vendor char 3','fff4':'Vendor char 4',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e':'Nordic UART (serial over BLE)',
+  '6e400002-b5a3-f393-e0a9-e50e24dcca9e':'UART RX — write here',
+  '6e400003-b5a3-f393-e0a9-e50e24dcca9e':'UART TX — notifies here',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455':'Microchip transparent UART',
+  '00010203-0405-0607-0809-0a0b0c0d1910':'Telink mesh (smart bulbs)'
+};
+const BASE = '-0000-1000-8000-00805f9b34fb';
+function shortUuid(u){ u = u.toLowerCase(); return (u.startsWith('0000') && u.endsWith(BASE)) ? u.slice(4, 8) : u; }
+function uuidName(u){ const s = shortUuid(u); return NAMES[s] || ''; }
+function normUuid(s){
+  s = s.trim().toLowerCase().replace(/^0x/, '');
+  if (/^[0-9a-f]{4}$/.test(s)) return '0000' + s + BASE;
+  if (/^[0-9a-f]{8}$/.test(s)) return s + BASE;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s)) return s;
+  if (/^[0-9a-f]{32}$/.test(s)) return s.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  return null;
+}
+function serviceList(){
+  const set = new Set();
+  const add = n => set.add('0000' + n.toString(16).padStart(4, '0') + BASE);
+  for (let i = 0x1800; i <= 0x18ff; i++) add(i);
+  for (let i = 0xfe00; i <= 0xffff; i++) add(i);
+  [0x1910, 0x00ff, 0xa000, 0xa002, 0xae00, 0xae30, 0xaf00, 0xb000, 0xe000, 0xd000, 0x5833, 0x1000, 0x2000].forEach(add);
+  ['6e400001-b5a3-f393-e0a9-e50e24dcca9e','49535343-fe7d-4ae5-8fa9-9fafd205e455','00010203-0405-0607-0809-0a0b0c0d1910',
+   '0000fd50-0000-1000-8000-00805f9b34fb','f000ffc0-0451-4000-b000-000000000000','e7810a71-73ae-499d-8c15-faa9aef0c3f2']
+    .forEach(u => set.add(u));
+  store.get('gp_uuids', []).forEach(u => { const n = normUuid(u); if (n) set.add(n); });
+  return [...set];
+}
+function showUuids(){
+  const u = store.get('gp_uuids', []);
+  $('#customUuids').value = u.join('\n');
+  $('#uuidCount').textContent = u.length ? `${u.length} saved` : '';
+}
+$('#saveUuids').onclick = () => {
+  const lines = $('#customUuids').value.split(/[\s,]+/).filter(Boolean);
+  const good = [], bad = [];
+  lines.forEach(l => (normUuid(l) ? good : bad).push(l));
+  store.set('gp_uuids', [...new Set(good)]);
+  showUuids();
+  if (bad.length) alert('Not valid UUIDs, skipped:\n' + bad.join('\n'));
+  else toast('Saved');
+};
+function addUuids(list){
+  const cur = new Set(store.get('gp_uuids', []));
+  list.forEach(u => { const n = normUuid(u); if (n) cur.add(n); });
+  store.set('gp_uuids', [...cur]); showUuids();
+}
+
+/* ---------- Bluetooth ---------- */
+let dev = null, gatt = null, report = [], sweepTarget = null, sweepStopFlag = false;
+const chrMap = new Map(); // key svc|chr -> characteristic
+
+if (!navigator.bluetooth) {
+  $('#bleSupport').innerHTML = '⚠️ This browser can\'t use Bluetooth. On Android use <b>Chrome</b>. On iPhone use the <b>Bluefy</b> browser.';
+  $('#scanBtn').disabled = true;
+} else $('#bleSupport').textContent = 'Turn the gadget on and keep it close to the phone.';
+
+function setConn(on, text){
+  const p = $('#conn'); p.textContent = text; p.classList.toggle('ok', on);
+  $('#discBtn').disabled = !on; $('#reconnBtn').disabled = on || !dev; $('#reportBtn').disabled = !report.length;
+}
+
+$('#scanBtn').onclick = async () => {
+  const prefix = $('#namePrefix').value.trim();
+  const opts = { optionalServices: serviceList() };
+  if (prefix) opts.filters = [{ namePrefix: prefix }]; else opts.acceptAllDevices = true;
+  try {
+    const d = await navigator.bluetooth.requestDevice(opts);
+    if (dev && dev.gatt.connected) dev.gatt.disconnect();
+    dev = d;
+    dev.addEventListener('gattserverdisconnected', () => { log('Disconnected from ' + (dev.name || 'device'), 'err'); setConn(false, 'Disconnected'); });
+    await connect();
+  } catch (e) { if (e.name !== 'NotFoundError') log('Scan: ' + e.message, 'err'); }
+};
+$('#reconnBtn').onclick = () => connect();
+$('#discBtn').onclick = () => { sweepStopFlag = true; if (dev && dev.gatt.connected) dev.gatt.disconnect(); };
+$('#reportBtn').onclick = () => copyText(report.join('\n'));
+
+async function connect(){
+  $('#devCard').hidden = false;
+  $('#devName').textContent = dev.name || '(no name)';
+  $('#devId').textContent = 'ID ' + dev.id;
+  setConn(false, 'Connecting…');
+  log('Connecting to ' + (dev.name || dev.id));
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try { gatt = await dev.gatt.connect(); break; } catch (e) { lastErr = e; await sleep(600); }
+  }
+  if (!gatt || !dev.gatt.connected) { log('Connect failed: ' + (lastErr && lastErr.message), 'err'); setConn(false, 'Failed'); return; }
+  setConn(true, 'Connected');
+  log('Connected', 'rx');
+  await discover();
+  renderMacros();
+}
+
+async function discover(){
+  const box = $('#services'); box.innerHTML = '<p class="mut">Reading services…</p>';
+  chrMap.clear();
+  report = [`Device: ${dev.name || '(no name)'}  id=${dev.id}`];
+  let services = [];
+  try { services = await gatt.getPrimaryServices(); }
+  catch (e) { box.innerHTML = `<p class="mut">No services visible (${esc(e.message)}). Add the gadget's service UUIDs under “Extra service UUIDs” and scan again.</p>`; report.push('No services visible'); setConn(true, 'Connected'); return; }
+  box.innerHTML = '';
+  for (const s of services) {
+    const sname = uuidName(s.uuid);
+    report.push(`Service ${s.uuid}${sname ? ' — ' + sname : ''}`);
+    const el = document.createElement('div'); el.className = 'svc';
+    el.innerHTML = `<div class="hd"><b>${esc(sname || 'Unknown service')}</b><div class="mono mut">${esc(s.uuid)}</div></div>`;
+    box.appendChild(el);
+    let chars = [];
+    try { chars = await s.getCharacteristics(); } catch (e) { el.insertAdjacentHTML('beforeend', `<div class="chr mut">Can't list characteristics: ${esc(e.message)}</div>`); continue; }
+    for (const c of chars) {
+      const key = s.uuid + '|' + c.uuid; chrMap.set(key, c);
+      const p = c.properties;
+      const props = ['read','write','writeWithoutResponse','notify','indicate'].filter(k => p[k]);
+      const cname = uuidName(c.uuid);
+      report.push(`  Char ${c.uuid}${cname ? ' — ' + cname : ''} [${props.join(', ')}]`);
+      const canW = p.write || p.writeWithoutResponse;
+      const ce = document.createElement('div'); ce.className = 'chr'; ce.dataset.key = key;
+      ce.innerHTML = `
+        <div><b>${esc(cname || 'Characteristic')}</b></div>
+        <div class="mono mut">${esc(c.uuid)}</div>
+        <div>${props.map(x => `<span class="badge">${x}</span>`).join('')}</div>
+        <div class="row" style="margin-top:6px">
+          ${p.read ? '<button class="s fit" data-a="read">Read</button>' : ''}
+          ${(p.notify || p.indicate) ? '<button class="s fit" data-a="notify">Notify</button>' : ''}
+          ${canW ? '<button class="s fit" data-a="target">Target</button>' : ''}
+        </div>
+        ${canW ? `
+        <div class="row" style="margin-top:6px">
+          <input class="mono wv" placeholder="hex e.g. 7E 04 01 FF or text">
+          <select class="fit wm" style="width:auto"><option value="hex">hex</option><option value="text">text</option></select>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label class="ck fit"><input type="checkbox" class="wsplit" checked> 20-byte packets</label>
+          <button class="b fit" data-a="write">Write</button>
+          <button class="s fit" data-a="save">Save as button</button>
+        </div>` : ''}
+        <div class="val mono" hidden></div>`;
+      el.appendChild(ce);
+      if (p.read && /^0000(2a..)/.test(c.uuid)) readChar(c, ce, true);
+    }
+  }
+  setConn(true, 'Connected');
+  log(`Found ${services.length} services, ${chrMap.size} characteristics`);
+}
+
+$('#services').addEventListener('click', async e => {
+  const a = e.target.dataset.a; if (!a) return;
+  const ce = e.target.closest('.chr'); const c = chrMap.get(ce.dataset.key);
+  if (a === 'read') readChar(c, ce);
+  else if (a === 'notify') {
+    try {
+      if (e.target.dataset.on) { await c.stopNotifications(); e.target.textContent = 'Notify'; delete e.target.dataset.on; log('Notify off ' + shortUuid(c.uuid)); return; }
+      c.addEventListener('characteristicvaluechanged', ev => {
+        const u = dvToU8(ev.target.value);
+        log(`◀ ${shortUuid(c.uuid)}  ${toHex(u)}  |${toAscii(u)}|`, 'rx');
+        showVal(ce, u);
+      });
+      await c.startNotifications(); e.target.textContent = 'Stop'; e.target.dataset.on = 1;
+      log('Notify on ' + shortUuid(c.uuid) + ' — now use the gadget and watch here');
+    } catch (err) { log('Notify: ' + err.message, 'err'); }
+  }
+  else if (a === 'write') {
+    const v = ce.querySelector('.wv').value; const m = ce.querySelector('.wm').value;
+    await writeChar(c, parseIn(v, m), ce.querySelector('.wsplit').checked);
+  }
+  else if (a === 'save') {
+    const v = ce.querySelector('.wv').value.trim(); if (!v) return alert('Type a value first');
+    const label = prompt('Button name (e.g. “Red”, “Off”)'); if (!label) return;
+    const all = store.get('gp_macros', {}); const k = dev.name || dev.id;
+    (all[k] = all[k] || []).push({ label, key: ce.dataset.key, v, m: ce.querySelector('.wm').value });
+    store.set('gp_macros', all); renderMacros();
+  }
+  else if (a === 'target') {
+    document.querySelectorAll('.chr.tgt').forEach(x => x.classList.remove('tgt'));
+    ce.classList.add('tgt'); sweepTarget = { c, ce };
+    $('#sweepTarget').textContent = shortUuid(c.uuid);
+    toast('Target set');
+  }
+});
+
+function showVal(ce, u){ const v = ce.querySelector('.val'); v.hidden = false; v.innerHTML = `HEX ${esc(toHex(u))}<br>TXT ${esc(toAscii(u))}<br>DEC ${esc(Array.from(u).join(' '))}`; }
+async function readChar(c, ce, quiet){
+  try { const u = dvToU8(await c.readValue()); showVal(ce, u); if (!quiet || u.length) log(`R ${shortUuid(c.uuid)}  ${toHex(u)}  |${toAscii(u)}|`, 'rx'); report.push(`    read ${shortUuid(c.uuid)} = ${toHex(u)} |${toAscii(u)}|`); }
+  catch (e) { if (!quiet) log('Read: ' + e.message, 'err'); }
+}
+async function writeChar(c, bytes, split = true){
+  if (!bytes.length) return log('Nothing to write', 'err');
+  const chunks = [];
+  if (split) for (let i = 0; i < bytes.length; i += 20) chunks.push(bytes.slice(i, i + 20)); else chunks.push(bytes);
+  try {
+    for (const ch of chunks) {
+      if (c.properties.write) await c.writeValueWithResponse(ch); else await c.writeValueWithoutResponse(ch);
+      if (chunks.length > 1) await sleep(30);
+    }
+    log(`▶ ${shortUuid(c.uuid)}  ${toHex(bytes)}`, 'tx'); return true;
+  } catch (e) { log('Write: ' + e.message, 'err'); return false; }
+}
+
+function renderMacros(){
+  const box = $('#macros'); if (!dev) return;
+  const list = (store.get('gp_macros', {})[dev.name || dev.id]) || [];
+  if (!list.length) { box.innerHTML = 'None yet. Write something below, then tap “Save as button”.'; return; }
+  box.innerHTML = list.map((m, i) => `<span class="macro"><button class="s" data-i="${i}">${esc(m.label)}</button><button class="s" data-del="${i}" title="Delete">✕</button></span>`).join('');
+}
+$('#macros').addEventListener('click', async e => {
+  const k = dev.name || dev.id; const all = store.get('gp_macros', {}); const list = all[k] || [];
+  if (e.target.dataset.del !== undefined) { if (!confirm('Delete this button?')) return; list.splice(+e.target.dataset.del, 1); store.set('gp_macros', all); renderMacros(); return; }
+  const m = list[+e.target.dataset.i]; if (!m) return;
+  const c = chrMap.get(m.key); if (!c) return log('That characteristic is not available — reconnect first', 'err');
+  writeChar(c, parseIn(m.v, m.m));
+});
+
+/* sweep */
+$('#sweepGo').onclick = async () => {
+  if (!sweepTarget) return alert('Tap “Target” on a writable characteristic first.');
+  const tpl = $('#sweepTpl').value;
+  if (!/XX/i.test(tpl)) return alert('Put XX in the template where the changing byte goes.');
+  const from = parseInt($('#sweepFrom').value, 16), to = parseInt($('#sweepTo').value, 16);
+  const delay = Math.max(50, +$('#sweepDelay').value || 400);
+  if (isNaN(from) || isNaN(to) || from > to || to > 255) return alert('From/To must be hex 00–FF, From ≤ To.');
+  sweepStopFlag = false; $('#sweepGo').disabled = true; $('#sweepStop').disabled = false;
+  log(`Sweep start ${tpl} from ${from.toString(16)} to ${to.toString(16)}`);
+  for (let v = from; v <= to && !sweepStopFlag; v++) {
+    const hx = v.toString(16).padStart(2, '0').toUpperCase();
+    $('#sweepNow').textContent = 'XX = ' + hx;
+    const ok = await writeChar(sweepTarget.c, hexToBytes(tpl.replace(/XX/gi, hx)));
+    if (!ok) break;
+    await sleep(delay);
+  }
+  log('Sweep stopped at ' + $('#sweepNow').textContent);
+  $('#sweepGo').disabled = false; $('#sweepStop').disabled = true;
+};
+$('#sweepStop').onclick = () => { sweepStopFlag = true; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- ZIP / APK / DEX parsing ---------- */
+function zipEntries(buf){
+  const dv = new DataView(buf); let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) return null;
+  const n = dv.getUint16(eocd + 10, true); let off = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder(); const out = [];
+  for (let k = 0; k < n && off + 46 <= buf.byteLength; k++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const nl = dv.getUint16(off + 28, true), el = dv.getUint16(off + 30, true), cl = dv.getUint16(off + 32, true);
+    out.push({ name: dec.decode(new Uint8Array(buf, off + 46, nl)), method: dv.getUint16(off + 10, true),
+      csize: dv.getUint32(off + 20, true), usize: dv.getUint32(off + 24, true), lho: dv.getUint32(off + 42, true) });
+    off += 46 + nl + el + cl;
+  }
+  return out;
+}
+async function zipRead(buf, e){
+  const dv = new DataView(buf);
+  const start = e.lho + 30 + dv.getUint16(e.lho + 26, true) + dv.getUint16(e.lho + 28, true);
+  const raw = new Uint8Array(buf, start, e.csize);
+  if (e.method === 0) return raw.slice();
+  if (e.method === 8) {
+    const s = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(s).arrayBuffer());
+  }
+  throw new Error('unsupported compression ' + e.method);
+}
+function readStringPool(dv, pos){
+  const hs = dv.getUint16(pos + 2, true), count = dv.getUint32(pos + 8, true), flags = dv.getUint32(pos + 16, true), sStart = dv.getUint32(pos + 20, true);
+  const utf8 = (flags & 0x100) !== 0, dec = new TextDecoder(), res = [];
+  for (let i = 0; i < count; i++) {
+    let o = pos + sStart + dv.getUint32(pos + hs + i * 4, true);
+    if (utf8) {
+      o += (dv.getUint8(o) & 0x80) ? 2 : 1;
+      let len = dv.getUint8(o);
+      if (len & 0x80) { len = ((len & 0x7f) << 8) | dv.getUint8(o + 1); o += 2; } else o += 1;
+      res.push(dec.decode(new Uint8Array(dv.buffer, dv.byteOffset + o, len)));
+    } else {
+      let len = dv.getUint16(o, true);
+      if (len & 0x8000) { len = ((len & 0x7fff) << 16) | dv.getUint16(o + 2, true); o += 4; } else o += 2;
+      let s = ''; for (let j = 0; j < len; j++) s += String.fromCharCode(dv.getUint16(o + j * 2, true));
+      res.push(s);
+    }
+  }
+  return res;
+}
+function parseAXML(u8){
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let strings = [], pos = 8; const out = [];
+  while (pos + 8 <= u8.length) {
+    const type = dv.getUint16(pos, true), size = dv.getUint32(pos + 4, true);
+    if (size < 8) break;
+    if (type === 0x0001) strings = readStringPool(dv, pos);
+    else if (type === 0x0102) {
+      const name = dv.getInt32(pos + 20, true), aStart = dv.getUint16(pos + 24, true), aSize = dv.getUint16(pos + 26, true), aCount = dv.getUint16(pos + 28, true);
+      const attrs = {}; let a = pos + 16 + aStart;
+      for (let i = 0; i < aCount; i++, a += aSize) {
+        const an = dv.getInt32(a + 4, true), raw = dv.getInt32(a + 8, true), dt = dv.getUint8(a + 15), data = dv.getInt32(a + 16, true);
+        attrs[strings[an]] = raw >= 0 ? strings[raw] : dt === 0x03 ? strings[data] : dt === 0x12 ? data !== 0 : dt === 0x01 ? '@res/0x' + (data >>> 0).toString(16) : data;
+      }
+      out.push({ tag: strings[name], attrs });
+    }
+    pos += size;
+  }
+  return out;
+}
+function dexStrings(u8){
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  if (!(u8[0] === 0x64 && u8[1] === 0x65 && u8[2] === 0x78)) return [];
+  const n = dv.getUint32(0x38, true), off = dv.getUint32(0x3c, true), dec = new TextDecoder();
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let p = dv.getUint32(off + i * 4, true);
+    while (u8[p] & 0x80) p++; p++;
+    let e = p; while (e < u8.length && u8[e] !== 0) e++;
+    out[i] = dec.decode(u8.subarray(p, e));
+  }
+  return out;
+}
+function printableStrings(u8, min = 5, max = 200000){
+  const out = []; let s = '';
+  for (let i = 0; i < u8.length && out.length < max; i++) {
+    const b = u8[i];
+    if (b >= 32 && b < 127) s += String.fromCharCode(b);
+    else { if (s.length >= min) out.push(s); s = ''; }
+  }
+  if (s.length >= min) out.push(s);
+  return out;
+}
+
+const CLUES = [
+  ['tuya','Tuya platform (Smart Life / Tuya apps) — may be re-pairable in the Smart Life app'],
+  ['com.telink','Telink chip (Bluetooth mesh lights)'],['blemesh','Bluetooth mesh'],['sigmesh','Bluetooth SIG mesh'],
+  ['espressif','Espressif ESP chip'],['esp32','ESP32 chip'],['esp8266','ESP8266 chip (Wi-Fi) — often flashable with Tasmota/ESPHome'],
+  ['mqtt','Uses MQTT (cloud or local messaging)'],['aliyun','Alibaba Cloud backend'],['amazonaws','Amazon AWS backend'],
+  ['jieli','JieLi chip (Bluetooth speakers)'],['actions-semi','Actions Semi audio chip'],['bluetrum','Bluetrum audio chip'],
+  ['beken','Beken chip — often flashable with OpenBeken'],['realtek','Realtek chip'],['nordicsemi','Nordic chip'],['no.nordicsemi','Nordic chip / DFU library'],
+  ['com.clj.fastble','FastBle library (plain BLE writes — good sign)'],['polidea.rxandroidble','RxAndroidBle library (plain BLE)'],
+  ['bluetoothgatt','Uses Bluetooth LE (GATT)'],['bluetoothsocket','Uses classic Bluetooth serial (SPP)'],
+  ['00001101-0000-1000-8000-00805f9b34fb','Classic Bluetooth serial port (SPP) — needs a Bluetooth serial terminal app, not BLE'],
+  ['wifimanager','Uses Wi-Fi'],['smartconfig','ESP SmartConfig Wi-Fi pairing'],['airkiss','AirKiss Wi-Fi pairing'],
+  ['zigbee','Zigbee'],['magichome','Magic Home LED platform'],['happylighting','HappyLighting LED platform'],['duoplus','Duoplus LED platform'],
+  ['ledble','LED BLE controller'],['qhm','QHM LED controller'],['govee','Govee'],['xiaomi','Xiaomi ecosystem'],['yeelight','Yeelight']
+];
+const KEYWORDS = /(globe|lamp|light|led|rgb|colou?r|bright|alarm|clock|speaker|volume|charge|wireless|qi|mode|effect|power|cmd|command|send|write|notify|uuid|mac|pair|bind|token|secret|key)/i;
+
+async function inspectFile(file){
+  const out = $('#fileOut'); out.innerHTML = '';
+  $('#fileStatus').textContent = `Reading ${file.name} (${(file.size / 1048576).toFixed(1)} MB)…`;
+  const buf = await file.arrayBuffer();
+  const res = { manifest: null, strings: [], files: [], nested: [] };
+  const entries = zipEntries(buf);
+  try {
+    if (entries) await inspectZip(buf, entries, res, file.name);
+    else res.strings = printableStrings(new Uint8Array(buf));
+  } catch (e) { log('Inspect: ' + e.message, 'err'); }
+  renderFindings(file, buf, entries, res);
+  $('#fileStatus').textContent = `Done: ${file.name}`;
+}
+async function inspectZip(buf, entries, res, label, depth = 0){
+  for (const e of entries) {
+    res.files.push((depth ? label + ' › ' : '') + e.name);
+    const n = e.name.toLowerCase();
+    try {
+      if (n === 'androidmanifest.xml' && !res.manifest) res.manifest = parseAXML(await zipRead(buf, e));
+      else if (/^classes\d*\.dex$/.test(n)) { $('#fileStatus').textContent = 'Reading code ' + e.name + '…'; await tick(); res.strings.push(...dexStrings(await zipRead(buf, e))); }
+      else if (n.endsWith('.apk') && depth === 0) { const inner = (await zipRead(buf, e)).buffer; const ie = zipEntries(inner); if (ie) { res.nested.push(e.name); await inspectZip(inner, ie, res, e.name, 1); } }
+      else if ((n.endsWith('.so') || n.startsWith('assets/')) && e.usize < 30e6 && !/\.(png|jpe?g|webp|gif|mp3|ogg|wav|mp4|ttf|otf)$/.test(n)) res.strings.push(...printableStrings(await zipRead(buf, e), 6, 50000));
+    } catch (err) { log(`Skip ${e.name}: ${err.message}`, 'err'); }
+  }
+}
+const tick = () => new Promise(r => setTimeout(r, 0));
+
+function renderFindings(file, buf, entries, res){
+  const out = $('#fileOut');
+  const all = res.strings;
+  const uuids = new Set(), urls = new Set(), ips = new Set(), hexes = new Set(), kw = new Set();
+  const reU = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  for (const s of all) {
+    if (s.length > 2000) continue;
+    const m = s.match(reU); if (m) m.forEach(x => uuids.add(x.toLowerCase()));
+    const u = s.match(/(?:https?|mqtts?|wss?|tcp):\/\/[^\s"'<>]+/gi); if (u) u.forEach(x => urls.add(x));
+    const ip = s.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g); if (ip) ip.forEach(x => { if (!/^(0|1|2)\.\d/.test(x)) ips.add(x); });
+    const t = s.trim();
+    if (t.length >= 6 && t.length <= 120 && /^(?:0x)?[0-9a-f]{2}(?:[ ,:-]?(?:0x)?[0-9a-f]{2})+$/i.test(t) && /[a-f]/i.test(t) && !/^[0-9a-f]{8}$/i.test(t) && !/^[0-9a-f]{32,}$/i.test(t)) hexes.add(t);
+    if (s.length < 80 && KEYWORDS.test(s) && !/\s{2}/.test(s) && /[a-z]/i.test(s)) kw.add(s);
+  }
+  // short UUID constants like "ffe1" / "FFF0"
+  for (const s of all) if (/^(?:0x)?(?!ffff)(?:ff[0-9a-f]{2}|fe[0-9a-f]{2}|ae0[0-9a-f])$/i.test(s.trim())) uuids.add(normUuid(s.trim()));
+  const lowAll = all.join('\n').toLowerCase();
+  const clues = CLUES.filter(([k]) => lowAll.includes(k)).map(c => c[1]);
+
+  let html = '';
+  if (res.manifest) {
+    const man = res.manifest.find(x => x.tag === 'manifest') || { attrs: {} };
+    const app = res.manifest.find(x => x.tag === 'application') || { attrs: {} };
+    const perms = res.manifest.filter(x => x.tag === 'uses-permission').map(x => (x.attrs.name || '').replace('android.permission.', ''));
+    html += card('App details', `
+      <div class="mono">Package: ${esc(man.attrs.package || '?')}<br>Version: ${esc(man.attrs.versionName || '?')}<br>Label: ${esc(app.attrs.label || '?')}</div>
+      <h3>Permissions (${perms.length})</h3><div class="list mono">${perms.map(p => `<div>${esc(p)}</div>`).join('') || 'none'}</div>`);
+  }
+  html += card('Platform clues', clues.length ? '<ul>' + clues.map(c => `<li>${esc(c)}</li>`).join('') + '</ul>' : '<p class="mut">No known platform fingerprints found.</p>');
+  const ul = [...uuids].filter(Boolean).sort();
+  html += card(`Bluetooth UUIDs (${ul.length})`, ul.length ? `
+    <div class="list mono">${ul.map(u => `<div>${esc(u)}${uuidName(u) ? ' <span class="mut">— ' + esc(uuidName(u)) + '</span>' : ''}</div>`).join('')}</div>
+    <div class="row" style="margin-top:8px"><button class="b fit" id="addFound">Add all to Bluetooth scan</button><button class="s fit" data-copy="uuids">Copy</button></div>` : '<p class="mut">None found.</p>');
+  const hl = [...hexes].slice(0, 500);
+  html += card(`Possible hex commands (${hexes.size})`, hl.length ? `<p class="mut">Tap one to copy, then paste into a writable characteristic on the Bluetooth tab.</p><div class="list mono" id="hexList">${hl.map(h => `<div data-c="${esc(h)}">${esc(h)}</div>`).join('')}</div>` : '<p class="mut">None found. The app may build commands in code — check the keywords list below.</p>');
+  html += card(`Web / network addresses (${urls.size + ips.size})`, (urls.size + ips.size) ? `<div class="list mono">${[...ips, ...urls].slice(0, 400).map(u => `<div>${esc(u)}</div>`).join('')}</div>` : '<p class="mut">None found.</p>');
+  html += card(`Interesting names (${kw.size})`, `<details><summary>Show</summary><div class="list mono">${[...kw].slice(0, 800).map(k => `<div>${esc(k)}</div>`).join('')}</div></details>`);
+  if (entries) html += card(`Files inside (${res.files.length})${res.nested.length ? ' incl. ' + res.nested.length + ' split APKs' : ''}`, `<details><summary>Show</summary><div class="list mono">${res.files.map(f => `<div>${esc(f)}</div>`).join('')}</div></details>`);
+  else {
+    const u8 = new Uint8Array(buf, 0, Math.min(buf.byteLength, 1024)); let dump = '';
+    for (let i = 0; i < u8.length; i += 16) { const r = u8.subarray(i, i + 16); dump += i.toString(16).padStart(6, '0') + '  ' + toHex(r).padEnd(48) + ' ' + toAscii(r) + '\n'; }
+    html += card('First 1 KB (hex)', `<pre class="list mono" style="white-space:pre;overflow-x:auto;font-size:11px">${esc(dump)}</pre>`);
+    html += card(`Text found in file (${all.length})`, `<details><summary>Show</summary><div class="list mono">${all.slice(0, 3000).map(s => `<div>${esc(s)}</div>`).join('')}</div></details>`);
+  }
+  html += `<div class="card"><button class="s" id="copyAll">Copy summary for Claude</button></div>`;
+  out.innerHTML = html;
+
+  const summary = [`File: ${file.name}`, 'Clues: ' + (clues.join('; ') || 'none'), 'UUIDs:', ...ul, 'Hex candidates:', ...hl.slice(0, 150), 'Addresses:', ...[...ips, ...urls].slice(0, 80)].join('\n');
+  log(`Inspected ${file.name}: ${ul.length} UUIDs, ${hexes.size} hex candidates, ${clues.length} clues`);
+  const af = $('#addFound'); if (af) af.onclick = () => { addUuids(ul); toast(`Added ${ul.length}`); alert('Added. Go to Bluetooth and Scan again.'); };
+  out.querySelectorAll('[data-copy="uuids"]').forEach(b => b.onclick = () => copyText(ul.join('\n')));
+  const hlEl = $('#hexList'); if (hlEl) hlEl.onclick = e => { const c = e.target.dataset.c; if (c) copyText(c); };
+  $('#copyAll').onclick = () => copyText(summary);
+}
+const card = (t, body) => `<div class="card"><h2>${esc(t)}</h2>${body}</div>`;
+$('#fileIn').onchange = e => { const f = e.target.files[0]; if (f) inspectFile(f); };
+
+/* ---------- USB serial ---------- */
+let port = null, reader = null, serKeep = false;
+if (!('serial' in navigator)) {
+  $('#serSupport').innerHTML = '⚠️ USB serial isn\'t available in this browser. It needs Chrome (desktop, or recent Android Chrome). Bluetooth and the other tabs still work.';
+  $('#serConn').disabled = true;
+}
+const serRx = $('#serRx');
+function serShow(u8){
+  const d = document.createElement('div');
+  d.textContent = $('#serHex').checked ? toHex(u8) : new TextDecoder().decode(u8);
+  serRx.appendChild(d); if (serRx.childNodes.length > 2000) serRx.firstChild.remove();
+  serRx.scrollTop = serRx.scrollHeight;
+}
+$('#serConn').onclick = async () => {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: +$('#baud').value });
+    log('Serial open @ ' + $('#baud').value, 'rx');
+    $('#serConn').disabled = true; $('#serDisc').disabled = false; $('#serSend').disabled = false;
+    serKeep = true;
+    while (port.readable && serKeep) {
+      reader = port.readable.getReader();
+      try { for (;;) { const { value, done } = await reader.read(); if (done) break; if (value) serShow(value); } }
+      catch (e) { log('Serial: ' + e.message, 'err'); }
+      finally { reader.releaseLock(); }
+    }
+  } catch (e) { if (e.name !== 'NotFoundError') log('Serial: ' + e.message, 'err'); }
+};
+$('#serDisc').onclick = async () => {
+  serKeep = false;
+  try { if (reader) await reader.cancel(); await port.close(); } catch {}
+  $('#serConn').disabled = false; $('#serDisc').disabled = true; $('#serSend').disabled = true; log('Serial closed');
+};
+$('#serSend').onclick = async () => {
+  let b = parseIn($('#serOut').value, $('#serMode').value);
+  if ($('#serMode').value === 'text') b = textToBytes($('#serOut').value + $('#serEol').value);
+  const w = port.writable.getWriter();
+  try { await w.write(b); log('▶ serial ' + toHex(b), 'tx'); } catch (e) { log('Serial send: ' + e.message, 'err'); } finally { w.releaseLock(); }
+};
+$('#serClear').onclick = () => { serRx.innerHTML = ''; };
+
+/* ---------- tools ---------- */
+function convert(){
+  const s = $('#cvIn').value, from = $('#cvFrom').value; let u8;
+  try {
+    if (from === 'hex') u8 = hexToBytes(s);
+    else if (from === 'text') u8 = textToBytes(s);
+    else if (from === 'dec') u8 = new Uint8Array(s.split(/[^0-9]+/).filter(Boolean).map(x => +x & 255));
+    else u8 = Uint8Array.from(atob(s.trim()), c => c.charCodeAt(0));
+  } catch { $('#cvOut').textContent = 'Can\'t read that input'; return; }
+  let b64 = ''; try { b64 = btoa(String.fromCharCode(...u8)); } catch {}
+  $('#cvOut').innerHTML = `HEX ${esc(toHex(u8))}<br>TXT ${esc(toAscii(u8))}<br>DEC ${esc(Array.from(u8).join(' '))}<br>B64 ${esc(b64)}<br>LEN ${u8.length} bytes`;
+}
+$('#cvIn').oninput = convert; $('#cvFrom').onchange = convert;
+
+function crc16(u8, poly, init, refl, xorOut = 0){
+  let crc = init;
+  for (const b of u8) {
+    if (refl) { crc ^= b; for (let i = 0; i < 8; i++) crc = crc & 1 ? (crc >>> 1) ^ poly : crc >>> 1; }
+    else { crc ^= b << 8; for (let i = 0; i < 8; i++) crc = crc & 0x8000 ? ((crc << 1) ^ poly) & 0xffff : (crc << 1) & 0xffff; }
+  }
+  return (crc ^ xorOut) & 0xffff;
+}
+function crc8(u8, poly = 0x07, init = 0){ let c = init; for (const b of u8) { c ^= b; for (let i = 0; i < 8; i++) c = c & 0x80 ? ((c << 1) ^ poly) & 0xff : (c << 1) & 0xff; } return c; }
+function crc8maxim(u8){ let c = 0; for (const b of u8) { c ^= b; for (let i = 0; i < 8; i++) c = c & 1 ? (c >>> 1) ^ 0x8c : c >>> 1; } return c; }
+function crc32(u8){ let c = ~0; for (const b of u8) { c ^= b; for (let i = 0; i < 8; i++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; } return (~c) >>> 0; }
+const h2 = (n, w = 2) => n.toString(16).toUpperCase().padStart(w, '0');
+function checksums(){
+  const u = hexToBytes($('#ckIn').value);
+  if (!u.length) { $('#ckOut').textContent = ''; return; }
+  const sum = u.reduce((a, b) => a + b, 0); const xor = u.reduce((a, b) => a ^ b, 0);
+  const rows = [
+    ['Sum (8-bit)', h2(sum & 255)], ['Sum (16-bit)', h2(sum & 0xffff, 4)], ['Two\'s complement of sum', h2((-sum) & 255)],
+    ['XOR', h2(xor)], ['CRC-8', h2(crc8(u))], ['CRC-8/MAXIM', h2(crc8maxim(u))],
+    ['CRC-16/MODBUS', h2(crc16(u, 0xa001, 0xffff, true), 4) + ' (send low byte first)'],
+    ['CRC-16/CCITT-FALSE', h2(crc16(u, 0x1021, 0xffff, false), 4)], ['CRC-16/XMODEM', h2(crc16(u, 0x1021, 0, false), 4)],
+    ['CRC-32', h2(crc32(u), 8)]
+  ];
+  const last = u[u.length - 1], body = u.subarray(0, u.length - 1);
+  let hint = '';
+  if (u.length > 2) {
+    const bs = body.reduce((a, b) => a + b, 0) & 255, bx = body.reduce((a, b) => a ^ b, 0);
+    const bs1 = body.subarray(1).reduce((a, b) => a + b, 0) & 255, bx1 = body.subarray(1).reduce((a, b) => a ^ b, 0);
+    if (last === bs) hint = 'Last byte = sum of the bytes before it ✔';
+    else if (last === bx) hint = 'Last byte = XOR of the bytes before it ✔';
+    else if (last === bs1) hint = 'Last byte = sum of bytes 2…n-1 (header excluded) ✔';
+    else if (last === bx1) hint = 'Last byte = XOR of bytes 2…n-1 (header excluded) ✔';
+    else if (last === crc8(body)) hint = 'Last byte = CRC-8 of the rest ✔';
+  }
+  $('#ckOut').innerHTML = rows.map(r => `${esc(r[0])}: <b>${esc(r[1])}</b>`).join('<br>') + (hint ? `<br><br>💡 ${esc(hint)}` : '');
+}
+$('#ckIn').oninput = checksums;
+function colour(){ const v = $('#colIn').value.slice(1); $('#colOut').innerHTML = `R ${v.slice(0,2).toUpperCase()} &nbsp;G ${v.slice(2,4).toUpperCase()} &nbsp;B ${v.slice(4,6).toUpperCase()}<br>${esc(v.toUpperCase().match(/../g).join(' '))}`; }
+$('#colIn').oninput = colour; colour();
+
+/* ---------- install / update ---------- */
+let deferred = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('#installBtn').hidden = false; });
+$('#installBtn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('#installBtn').hidden = true; };
+$('#updateBtn').onclick = async () => {
+  toast('Updating…');
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) { await reg.update(); if (reg.waiting) reg.waiting.postMessage('skip'); }
+    const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k)));
+  } catch {}
+  location.reload();
+};
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+showUuids();
+log('Gadget Probe ready');
+</script>
+</body>
+</html>
