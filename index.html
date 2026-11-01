@@ -674,9 +674,20 @@ $('#netScan').onclick = async () => {
   $('#netScan').disabled = true; $('#netStop').disabled = false; $('#netDiff').innerHTML = ''; $('#netList').innerHTML = '';
   $('#netProg').textContent = 'Starting…'; log('Network scan started');
   try {
-    const r = await NS.scan({ timeout: 450 });
+    // Two passes merged: sleepy devices and busy routers often miss one pass.
+    const byIp = new Map(); let r = null;
+    for (let pass = 1; pass <= 2; pass++) {
+      $('#netProg').textContent = `Pass ${pass} of 2…`;
+      r = await NS.scan({ timeout: pass === 1 ? 450 : 700 });
+      r.devices.forEach(d => {
+        const old = byIp.get(d.ip);
+        if (!old) byIp.set(d.ip, d);
+        else { old.ports = [...new Set([...(old.ports || []), ...(d.ports || [])])].sort((a, b) => a - b); old.name = old.name || d.name; old.mac = old.mac || d.mac; }
+      });
+      if (r.cancelled) break;
+    }
     netInfoData = Object.assign(netInfoData || {}, r);
-    netDevices = r.devices.sort((a, b) => a.ip.split('.').map(Number).reduce((x, y) => x * 256 + y) - b.ip.split('.').map(Number).reduce((x, y) => x * 256 + y));
+    netDevices = [...byIp.values()].sort((a, b) => a.ip.split('.').map(Number).reduce((x, y) => x * 256 + y) - b.ip.split('.').map(Number).reduce((x, y) => x * 256 + y));
     $('#netProg').textContent = `${netDevices.length} devices${r.cancelled ? ' (stopped early)' : ''}`;
     $('#netList').innerHTML = netDevices.map(d => devHtml(d)).join('');
     log(`Network scan: ${netDevices.length} devices`);
